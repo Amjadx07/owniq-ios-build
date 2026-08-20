@@ -84,7 +84,7 @@ jobs:
         run: |
           set -euo pipefail
           APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
-          IPA_PATH="$PWD/OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned.ipa"
+          IPA_PATH="$PWD/OWNIQ-Native-0.9.2-Manga-Intelligence-unsigned.ipa"
           test -d "$APP_PATH"
           rm -rf Payload "$IPA_PATH" SHA256.txt
           mkdir -p Payload
@@ -96,8 +96,8 @@ jobs:
       - name: Upload IPA only
         uses: actions/upload-artifact@v4
         with:
-          name: OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned
+          name: OWNIQ-Native-0.9.2-Manga-Intelligence-unsigned
           path: |
-            src/OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned.ipa
+            src/OWNIQ-Native-0.9.2-Manga-Intelligence-unsigned.ipa
             src/SHA256.txt
           retention-days: 14
