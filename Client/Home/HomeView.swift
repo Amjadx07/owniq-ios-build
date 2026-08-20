@@ -24,6 +24,20 @@ struct HomeView: View {
             Label("Privé", systemImage: "lock.fill")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.owniqSecondary)
+
+            NavigationLink {
+                ProfileView()
+            } label: {
+                Image(systemName: "person.crop.circle")
+                    .font(.title3.weight(.semibold))
+                    .foregroundStyle(Color.owniqSignal)
+                    .frame(width: 48, height: 48)
+                    .background(Color.owniqSurface, in: Circle())
+                    .overlay { Circle().stroke(Color.white.opacity(0.08), lineWidth: 1) }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Profil")
+            .accessibilityHint("Ouvre les réglages et la confidentialité")
         }
         .padding(.bottom, 8)
     }
@@ -133,7 +147,7 @@ struct HomeView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "lock.shield.fill")
                 .foregroundStyle(Color.owniqSignal)
-            Text("Cette version de test garde l'expérience complète. Le moteur propriétaire d'OWNIQ n'est pas publié : la reconnaissance utilise un fallback local Apple Vision et reste volontairement prudente.")
+            Text("Tes objets et tes pièces restent locaux. Le cerveau propriétaire n'est pas publié dans cette version de test.")
                 .font(.caption)
                 .foregroundStyle(Color.owniqSecondary)
                 .fixedSize(horizontal: false, vertical: true)
