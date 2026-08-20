@@ -1,0 +1,74 @@
+name: Build OWNIQ iPhone IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-iphoneos:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout public build shell
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Install or verify XcodeGen
+        run: |
+          set -euo pipefail
+          if ! command -v xcodegen >/dev/null 2>&1; then
+            brew install xcodegen
+          fi
+          xcodegen version
+
+      - name: Generate Xcode project
+        run: |
+          set -euo pipefail
+          xcodegen generate
+          test -d OWNIQ.xcodeproj
+          xcodebuild -list -project OWNIQ.xcodeproj
+
+      - name: Build unsigned app for physical iPhone
+        run: |
+          set -euo pipefail
+          rm -rf DerivedData Payload build.log
+          xcodebuild \
+            -project OWNIQ.xcodeproj \
+            -scheme OWNIQ \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build | tee build.log
+
+      - name: Package unsigned IPA
+        run: |
+          set -euo pipefail
+          APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
+          test -d "$APP_PATH"
+          rm -rf Payload OWNIQ-0.9.1-public-shell-unsigned.ipa SHA256.txt
+          mkdir -p Payload
+          ditto "$APP_PATH" Payload/OWNIQ.app
+          /usr/bin/zip -qry OWNIQ-0.9.1-public-shell-unsigned.ipa Payload
+          test -s OWNIQ-0.9.1-public-shell-unsigned.ipa
+          shasum -a 256 OWNIQ-0.9.1-public-shell-unsigned.ipa > SHA256.txt
+
+      - name: Upload IPA and build log
+        uses: actions/upload-artifact@v4
+        with:
+          name: OWNIQ-0.9.1-public-shell-unsigned
+          path: |
+            OWNIQ-0.9.1-public-shell-unsigned.ipa
+            SHA256.txt
+            build.log
+          retention-days: 14
