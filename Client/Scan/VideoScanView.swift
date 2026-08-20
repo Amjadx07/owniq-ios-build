@@ -3,13 +3,49 @@ import AVFoundation
 import UIKit
 
 struct VideoScanView: View {
+    struct ReviewObject: Identifiable, Hashable {
+        let id: UUID
+        var name: String
+        var category: String
+        var confidence: Double?
+        var selected: Bool
+        var manual: Bool
+
+        init(guess: VisionGuess) {
+            id = UUID()
+            name = guess.name
+            category = guess.category
+            confidence = guess.confidence
+            selected = true
+            manual = false
+        }
+
+        init(name: String, category: String = "Autres") {
+            id = UUID()
+            self.name = name
+            self.category = category
+            confidence = nil
+            selected = true
+            manual = true
+        }
+    }
+
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var store: AppStore
 
     @State private var isRunning = true
-    @State private var guesses: [VisionGuess] = []
+    @State private var objects: [ReviewObject] = []
     @State private var seenKeys: Set<String> = []
+    @State private var removed: [ReviewObject] = []
+    @State private var showManualAdd = false
+    @State private var manualName = ""
+    @State private var manualCategory = "Autres"
+    @State private var editingID: UUID?
+    @State private var editName = ""
+    @State private var editCategory = "Autres"
     @State private var didSave = false
+
+    private var selectedCount: Int { objects.filter(\.selected).count }
 
     var body: some View {
         ZStack {
@@ -21,17 +57,17 @@ struct VideoScanView: View {
             .ignoresSafeArea()
 
             LinearGradient(
-                colors: [.black.opacity(0.62), .clear, .black.opacity(0.78)],
+                colors: [.black.opacity(0.62), .clear, .black.opacity(0.86)],
                 startPoint: .top,
                 endPoint: .bottom
             )
             .ignoresSafeArea()
             .allowsHitTesting(false)
 
-            VStack(spacing: 14) {
+            VStack(spacing: 12) {
                 topBar
                 Spacer()
-                detectionPanel
+                if isRunning { livePanel } else { reviewPanel }
                 controls
             }
             .padding(.horizontal, 16)
@@ -39,72 +75,111 @@ struct VideoScanView: View {
             .padding(.bottom, 18)
         }
         .onDisappear { isRunning = false }
+        .alert("Ajouter un objet", isPresented: $showManualAdd) {
+            TextField("Ex. Airfryer Ninja", text: $manualName)
+            TextField("Catégorie", text: $manualCategory)
+            Button("Ajouter") { addManual() }
+                .disabled(manualName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Annuler", role: .cancel) { manualName = "" }
+        } message: {
+            Text("Ajoute ce qu'OWNIQ n'a pas reconnu. Tu pourras encore corriger le nom avant de garder le scan.")
+        }
+        .alert("Corriger l'objet", isPresented: Binding(
+            get: { editingID != nil },
+            set: { if !$0 { editingID = nil } }
+        )) {
+            TextField("Nom", text: $editName)
+            TextField("Catégorie", text: $editCategory)
+            Button("Enregistrer") { applyCorrection() }
+                .disabled(editName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            Button("Annuler", role: .cancel) { editingID = nil }
+        } message: {
+            Text("Le nom suffit dans la plupart des cas.")
+        }
     }
 
     private var topBar: some View {
         HStack {
-            Button {
-                dismiss()
-            } label: {
+            Button { dismiss() } label: {
                 Image(systemName: "xmark")
                     .font(.headline.bold())
                     .frame(width: 46, height: 46)
                     .background(.ultraThinMaterial, in: Circle())
             }
+            .accessibilityLabel("Fermer")
 
             Spacer()
 
             VStack(spacing: 2) {
-                Text("Scanner des objets")
+                Text(isRunning ? "Scanner des objets" : "Vérifier le scan")
                     .font(.headline)
-                Text(isRunning ? "Déplace lentement la caméra" : "Scan en pause")
+                Text(isRunning ? "Déplace lentement la caméra" : "Garde seulement ce qui est juste")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
             }
 
             Spacer()
 
-            Text("\(guesses.count)")
+            Text("\(objects.count)")
                 .font(.headline.monospacedDigit())
                 .frame(width: 46, height: 46)
                 .background(.ultraThinMaterial, in: Circle())
-                .accessibilityLabel("\(guesses.count) objets proposés")
+                .accessibilityLabel("\(objects.count) objets proposés")
         }
         .foregroundStyle(.white)
     }
 
-    private var detectionPanel: some View {
-        VStack(alignment: .leading, spacing: 9) {
+    private var livePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Objets repérés")
+                Text("Objets trouvés")
                     .font(.headline)
                 Spacer()
-                Text("À confirmer")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
+                Button { showManualAdd = true } label: {
+                    Label("Ajouter", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                }
             }
 
-            if guesses.isEmpty {
-                Text("Aucun objet proposé pour l'instant. Approche-toi d'un objet et garde-le quelques instants dans le cadre.")
+            if objects.isEmpty {
+                Text("Rien pour l'instant. Approche-toi d'un objet et garde-le quelques instants dans le cadre.")
                     .font(.caption)
                     .foregroundStyle(.white.opacity(0.72))
             } else {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(guesses) { guess in
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(guess.name)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(1)
-                                Text(guess.category)
-                                    .font(.caption2)
-                                    .foregroundStyle(.white.opacity(0.65))
+                        ForEach(objects) { object in
+                            HStack(spacing: 8) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(object.name)
+                                        .font(.caption.weight(.semibold))
+                                        .lineLimit(1)
+                                    Text(object.manual ? "Ajouté manuellement" : "À confirmer")
+                                        .font(.caption2)
+                                        .foregroundStyle(object.manual ? Color.owniqSignal : .orange)
+                                }
+
+                                Button { remove(object) } label: {
+                                    Image(systemName: "xmark")
+                                        .font(.caption.bold())
+                                        .frame(width: 30, height: 30)
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityLabel("Retirer \(object.name)")
                             }
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 8)
-                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+                            .padding(.leading, 11)
+                            .padding(.trailing, 5)
+                            .padding(.vertical, 7)
+                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                         }
                     }
+                }
+            }
+
+            if !removed.isEmpty {
+                Button { undoRemoval() } label: {
+                    Label("Annuler le dernier retrait", systemImage: "arrow.uturn.backward")
+                        .font(.caption.weight(.semibold))
                 }
             }
         }
@@ -113,28 +188,124 @@ struct VideoScanView: View {
         .foregroundStyle(.white)
     }
 
+    private var reviewPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Voilà ce que j'ai trouvé")
+                    .font(.headline)
+                Spacer()
+                Button { showManualAdd = true } label: {
+                    Label("Ajouter", systemImage: "plus")
+                        .font(.subheadline.weight(.semibold))
+                }
+            }
+
+            Text("Touchez un nom pour le corriger. Décoche ce qui ne correspond pas à un objet réel.")
+                .font(.caption)
+                .foregroundStyle(.white.opacity(0.70))
+
+            if objects.isEmpty {
+                Text("Aucun objet à garder. Tu peux en ajouter manuellement ou reprendre le scan.")
+                    .font(.caption)
+                    .foregroundStyle(.white.opacity(0.72))
+                    .padding(.vertical, 8)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(objects) { object in
+                            reviewRow(object)
+                        }
+                    }
+                    .frame(maxHeight: 330)
+                }
+            }
+        }
+        .padding(14)
+        .background(.black.opacity(0.76), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 20).stroke(.white.opacity(0.09), lineWidth: 1) }
+        .foregroundStyle(.white)
+    }
+
+    private func reviewRow(_ object: ReviewObject) -> some View {
+        HStack(spacing: 10) {
+            Button { toggle(object.id) } label: {
+                Image(systemName: object.selected ? "checkmark.circle.fill" : "circle")
+                    .font(.title3)
+                    .foregroundStyle(object.selected ? Color.owniqSignal : .white.opacity(0.45))
+                    .frame(width: 40, height: 40)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(object.selected ? "Retirer cet objet" : "Garder cet objet")
+
+            Button { beginEdit(object) } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(object.name)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                    HStack(spacing: 6) {
+                        Text(object.category)
+                        Text("·")
+                        Text(object.manual ? "Manuel" : "À confirmer")
+                    }
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.62))
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Corriger le nom ou la catégorie")
+
+            Button { beginEdit(object) } label: {
+                Image(systemName: "pencil")
+                    .frame(width: 40, height: 40)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Corriger \(object.name)")
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            object.selected ? Color.white.opacity(0.09) : Color.white.opacity(0.035),
+            in: RoundedRectangle(cornerRadius: 15, style: .continuous)
+        )
+        .opacity(object.selected ? 1 : 0.58)
+    }
+
     private var controls: some View {
         VStack(spacing: 10) {
-            Button {
-                isRunning.toggle()
-            } label: {
-                Label(isRunning ? "Terminer le scan" : "Reprendre le scan", systemImage: isRunning ? "stop.circle.fill" : "play.circle.fill")
-                    .font(.headline)
-                    .frame(maxWidth: .infinity, minHeight: 52)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(isRunning ? Color.owniqCoral : Color.owniqSignal)
-
-            if !isRunning && !guesses.isEmpty {
+            if isRunning {
                 Button {
-                    saveAll()
+                    isRunning = false
                 } label: {
-                    Label(didSave ? "Ajoutés à Mes objets" : "Ajouter \(guesses.count) à Mes objets", systemImage: didSave ? "checkmark.circle.fill" : "shippingbox.fill")
-                        .frame(maxWidth: .infinity, minHeight: 50)
+                    Label("Terminer", systemImage: "checkmark.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity, minHeight: 52)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color.owniqSignal)
-                .disabled(didSave)
+                .tint(Color.owniqCoral)
+            } else {
+                HStack(spacing: 10) {
+                    Button {
+                        isRunning = true
+                        didSave = false
+                    } label: {
+                        Label("Reprendre", systemImage: "camera.viewfinder")
+                            .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button { saveSelected() } label: {
+                        Label(
+                            didSave ? "Ajoutés" : (selectedCount == 0 ? "Terminer" : "Ajouter \(selectedCount)"),
+                            systemImage: didSave ? "checkmark.circle.fill" : "plus.circle.fill"
+                        )
+                        .frame(maxWidth: .infinity, minHeight: 50)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.owniqSignal)
+                    .disabled(didSave)
+                }
             }
         }
     }
@@ -143,17 +314,62 @@ struct VideoScanView: View {
         let key = PublicVisionEngine.dedupKey(for: guess)
         guard !seenKeys.contains(key) else { return }
         seenKeys.insert(key)
-        guesses.append(guess)
+        objects.append(ReviewObject(guess: guess))
         didSave = false
     }
 
-    private func saveAll() {
-        let items = guesses.map { guess in
+    private func remove(_ object: ReviewObject) {
+        objects.removeAll { $0.id == object.id }
+        removed.append(object)
+    }
+
+    private func undoRemoval() {
+        guard let object = removed.popLast() else { return }
+        objects.append(object)
+    }
+
+    private func addManual() {
+        let clean = manualName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        let category = manualCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+        objects.append(ReviewObject(name: clean, category: category.isEmpty ? "Autres" : category))
+        manualName = ""
+        manualCategory = "Autres"
+        didSave = false
+    }
+
+    private func toggle(_ id: UUID) {
+        guard let index = objects.firstIndex(where: { $0.id == id }) else { return }
+        objects[index].selected.toggle()
+    }
+
+    private func beginEdit(_ object: ReviewObject) {
+        editingID = object.id
+        editName = object.name
+        editCategory = object.category
+    }
+
+    private func applyCorrection() {
+        guard let id = editingID,
+              let index = objects.firstIndex(where: { $0.id == id }) else { return }
+        let cleanName = editName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanCategory = editCategory.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanName.isEmpty else { return }
+        objects[index].name = cleanName
+        objects[index].category = cleanCategory.isEmpty ? "Autres" : cleanCategory
+        objects[index].selected = true
+        objects[index].manual = true
+        editingID = nil
+    }
+
+    private func saveSelected() {
+        let chosen = objects.filter(\.selected)
+        let items = chosen.map { object in
             VaultItem(
-                name: guess.name,
-                category: guess.category,
-                confidence: guess.confidence,
-                needsConfirmation: true,
+                name: object.name,
+                category: object.category,
+                confidence: object.confidence,
+                needsConfirmation: !object.manual,
                 source: .video
             )
         }
