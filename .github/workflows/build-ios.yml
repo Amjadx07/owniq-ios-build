@@ -72,7 +72,7 @@ jobs:
           else
             echo "::error::OWNIQ iphoneos build failed. Sanitized compiler diagnostics follow."
             grep -E '(^| )error:|fatal error:' "$LOG" \
-              | sed -E 's#^/[^:]+:[0-9]+:[0-9]+: error:#error:#' \
+              | sed -E 's#^.*/([^/:]+\.swift):([0-9]+):([0-9]+): error:#\1:\2:\3: error:#' \
               | tail -n 120 || true
             exit 1
           fi
