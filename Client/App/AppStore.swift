@@ -5,6 +5,7 @@ struct VaultItem: Identifiable, Codable, Hashable {
     enum Source: String, Codable, CaseIterable {
         case photo = "Photo"
         case video = "Vidéo"
+        case room3D = "Pièce 3D"
         case manual = "Manuel"
     }
 

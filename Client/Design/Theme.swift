@@ -25,7 +25,7 @@ struct OwnIQWordmark: View {
             .frame(width: compact ? 34 : 42, height: compact ? 34 : 42)
 
             Text("OWNIQ")
-                .font(compact ? .headline.bold() : .title3.black)
+                .font(compact ? .headline.bold() : .title3.weight(.black))
                 .tracking(1.3)
         }
         .accessibilityElement(children: .combine)

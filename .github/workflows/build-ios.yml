@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: Checkout public build shell
+      - name: Checkout public build client
         uses: actions/checkout@v4
 
       - name: Show Xcode version
@@ -57,20 +57,21 @@ jobs:
         run: |
           set -euo pipefail
           APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
+          IPA_PATH="$PWD/OWNIQ-0.9.1-full-ux-unsigned.ipa"
           test -d "$APP_PATH"
-          rm -rf Payload OWNIQ-0.9.1-public-shell-unsigned.ipa SHA256.txt
+          rm -rf Payload "$IPA_PATH" SHA256.txt
           mkdir -p Payload
           ditto "$APP_PATH" Payload/OWNIQ.app
-          /usr/bin/zip -qry OWNIQ-0.9.1-public-shell-unsigned.ipa Payload
-          test -s OWNIQ-0.9.1-public-shell-unsigned.ipa
-          shasum -a 256 OWNIQ-0.9.1-public-shell-unsigned.ipa > SHA256.txt
+          /usr/bin/zip -qry "$IPA_PATH" Payload
+          test -s "$IPA_PATH"
+          shasum -a 256 "$IPA_PATH" > SHA256.txt
 
       - name: Upload IPA and build log
         uses: actions/upload-artifact@v4
         with:
-          name: OWNIQ-0.9.1-public-shell-unsigned
+          name: OWNIQ-0.9.1-full-ux-unsigned
           path: |
-            OWNIQ-0.9.1-public-shell-unsigned.ipa
+            OWNIQ-0.9.1-full-ux-unsigned.ipa
             SHA256.txt
             build.log
           retention-days: 14
