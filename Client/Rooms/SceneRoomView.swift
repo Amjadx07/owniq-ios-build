@@ -84,7 +84,6 @@ struct SceneRoomView: UIViewRepresentable {
             switch mode {
             case .fps:
                 if gesture.numberOfTouches <= 1 {
-                    // Mobile-game style: one thumb turns and walks directly.
                     camera.eulerAngles.y -= dx * 0.0047
                     camera.eulerAngles.z = 0
                     let yaw = camera.eulerAngles.y
@@ -234,10 +233,8 @@ struct SceneRoomView: UIViewRepresentable {
         for node in nodes {
             guard let geometry = node.geometry else { continue }
             let structural = isStructural(node)
-            let sourceColor = geometry.materials.compactMap { material -> UIColor? in
-                if let color = material.diffuse.contents as? UIColor { return color }
-                if let color = material.diffuse.contents as? CGColor { return UIColor(cgColor: color) }
-                return nil
+            let sourceColor = geometry.materials.compactMap { material in
+                material.diffuse.contents as? UIColor
             }.first
 
             if style == .real {
