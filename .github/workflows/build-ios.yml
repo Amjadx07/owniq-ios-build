@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
-          IPA_PATH="$PWD/OWNIQ-0.9.1-full-ux-unsigned.ipa"
+          IPA_PATH="$PWD/OWNIQ-0.9.1-full-client-mirror-unsigned.ipa"
           test -d "$APP_PATH"
           rm -rf Payload "$IPA_PATH" SHA256.txt
           mkdir -p Payload
@@ -69,9 +69,9 @@ jobs:
       - name: Upload IPA and build log
         uses: actions/upload-artifact@v4
         with:
-          name: OWNIQ-0.9.1-full-ux-unsigned
+          name: OWNIQ-0.9.1-full-client-mirror-unsigned
           path: |
-            OWNIQ-0.9.1-full-ux-unsigned.ipa
+            OWNIQ-0.9.1-full-client-mirror-unsigned.ipa
             SHA256.txt
             build.log
           retention-days: 14
