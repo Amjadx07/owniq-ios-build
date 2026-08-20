@@ -1,10 +1,6 @@
-name: Build OWNIQ iPhone IPA
+name: Build private OWNIQ source on public macOS runner
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -13,11 +9,28 @@ permissions:
 jobs:
   build-iphoneos:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 35
 
     steps:
-      - name: Checkout public build client
+      - name: Verify private-repo credential exists
+        env:
+          OWNIQ_REPO_TOKEN: ${{ secrets.OWNIQ_PRIVATE_REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${OWNIQ_REPO_TOKEN:-}" ]; then
+            echo "::error::Repository secret OWNIQ_PRIVATE_REPO_TOKEN is missing."
+            exit 1
+          fi
+
+      - name: Checkout private OWNIQ source
         uses: actions/checkout@v4
+        with:
+          repository: Amjadx07/owniq-native
+          ref: recovery-0.7-safe-upgrade
+          token: ${{ secrets.OWNIQ_PRIVATE_REPO_TOKEN }}
+          path: src
+          persist-credentials: false
+          fetch-depth: 1
 
       - name: Show Xcode version
         run: xcodebuild -version
@@ -31,17 +44,20 @@ jobs:
           xcodegen version
 
       - name: Generate Xcode project
+        working-directory: src
         run: |
           set -euo pipefail
+          python3 scripts/validate_repo.py
           xcodegen generate
           test -d OWNIQ.xcodeproj
-          xcodebuild -list -project OWNIQ.xcodeproj
 
       - name: Build unsigned app for physical iPhone
+        working-directory: src
         run: |
-          set -euo pipefail
-          rm -rf DerivedData Payload build.log
-          xcodebuild \
+          set -uo pipefail
+          rm -rf DerivedData Payload
+          LOG="$RUNNER_TEMP/owniq-xcodebuild.log"
+          if xcodebuild \
             -project OWNIQ.xcodeproj \
             -scheme OWNIQ \
             -configuration Release \
@@ -51,13 +67,22 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
-            clean build | tee build.log
+            clean build >"$LOG" 2>&1; then
+            echo "OWNIQ iphoneos build succeeded."
+          else
+            echo "::error::OWNIQ iphoneos build failed. Sanitized compiler diagnostics follow."
+            grep -E '(^| )error:|fatal error:' "$LOG" \
+              | sed -E 's#^/[^:]+:[0-9]+:[0-9]+: error:#error:#' \
+              | tail -n 120 || true
+            exit 1
+          fi
 
       - name: Package unsigned IPA
+        working-directory: src
         run: |
           set -euo pipefail
           APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
-          IPA_PATH="$PWD/OWNIQ-0.9.1-full-ux-unsigned.ipa"
+          IPA_PATH="$PWD/OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned.ipa"
           test -d "$APP_PATH"
           rm -rf Payload "$IPA_PATH" SHA256.txt
           mkdir -p Payload
@@ -66,12 +91,11 @@ jobs:
           test -s "$IPA_PATH"
           shasum -a 256 "$IPA_PATH" > SHA256.txt
 
-      - name: Upload IPA and build log
+      - name: Upload IPA only
         uses: actions/upload-artifact@v4
         with:
-          name: OWNIQ-0.9.1-full-ux-unsigned
+          name: OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned
           path: |
-            OWNIQ-0.9.1-full-ux-unsigned.ipa
-            SHA256.txt
-            build.log
+            src/OWNIQ-Native-0.9.1-Safe-Upgrade-unsigned.ipa
+            src/SHA256.txt
           retention-days: 14
