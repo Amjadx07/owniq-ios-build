@@ -206,7 +206,7 @@ private struct FinalTabBar: View {
     }
 }
 
-typealias OWNIQFinalTabBar = FinalTabBar
+private typealias OWNIQFinalTabBar = FinalTabBar
 
 private struct FinalMetricIcon: View {
     let icon: String
