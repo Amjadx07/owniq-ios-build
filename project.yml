@@ -15,7 +15,7 @@ targets:
       - path: Client
         excludes:
           - Rooms/RoomViews.swift
-      - path: OWNIQ/Design
+      - path: OWNIQ/Design/OWNIQFinalReferenceUI.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.owniq.publicbuild
