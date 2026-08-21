@@ -6,7 +6,7 @@ struct OWNIQApp: App {
 
     var body: some Scene {
         WindowGroup {
-            HomeView()
+            OWNIQFinalAppShell()
                 .environmentObject(store)
                 .preferredColorScheme(.dark)
         }
