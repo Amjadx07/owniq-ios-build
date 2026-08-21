@@ -15,6 +15,7 @@ targets:
       - path: Client
         excludes:
           - Rooms/RoomViews.swift
+      - path: OWNIQ/Design/OWNIQFinalReferenceUI.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.owniq.publicbuild
@@ -28,7 +29,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_STYLE: Automatic
-        CURRENT_PROJECT_VERSION: 12
+        CURRENT_PROJECT_VERSION: 13
         MARKETING_VERSION: 0.9.1
         IPHONEOS_DEPLOYMENT_TARGET: 17.0
     scheme:

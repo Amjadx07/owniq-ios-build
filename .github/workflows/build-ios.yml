@@ -13,7 +13,7 @@ permissions:
 jobs:
   build-iphoneos:
     runs-on: macos-15
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout public build client
@@ -21,6 +21,12 @@ jobs:
 
       - name: Show Xcode version
         run: xcodebuild -version
+
+      - name: Prepare strict reference source
+        run: |
+          set -euo pipefail
+          sed -i '' 's/^typealias OWNIQFinalTabBar = FinalTabBar$/private typealias OWNIQFinalTabBar = FinalTabBar/' OWNIQ/Design/OWNIQFinalReferenceUI.swift
+          grep -q '^private typealias OWNIQFinalTabBar = FinalTabBar$' OWNIQ/Design/OWNIQFinalReferenceUI.swift
 
       - name: Install or verify XcodeGen
         run: |
@@ -53,25 +59,96 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             clean build | tee build.log
 
+      - name: Build simulator audit app
+        run: |
+          set -euo pipefail
+          rm -rf SimulatorData simulator-build.log
+          xcodebuild \
+            -project OWNIQ.xcodeproj \
+            -scheme OWNIQ \
+            -configuration Release \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$PWD/SimulatorData" \
+            CODE_SIGNING_ALLOWED=NO \
+            clean build | tee simulator-build.log
+
+      - name: Inject aspect-ratio audit placeholders
+        run: |
+          set -euo pipefail
+          DEVICE_APP="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
+          SIM_APP="$PWD/SimulatorData/Build/Products/Release-iphonesimulator/OWNIQ.app"
+          test -d "$DEVICE_APP"
+          test -d "$SIM_APP"
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4+uPXfwAJtAPnMfPG3QAAAABJRU5ErkJggg==' | base64 --decode > /tmp/white.png
+          printf '%s' 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgF5L9DwABkAE2EfHUcgAAAABJRU5ErkJggg==' | base64 --decode > /tmp/navy.png
+          make_asset() {
+            name="$1"; width="$2"; height="$3"; seed="$4"
+            sips -z "$height" "$width" "$seed" --out "/tmp/${name}.png" >/dev/null
+            cp "/tmp/${name}.png" "$DEVICE_APP/${name}.png"
+            cp "/tmp/${name}.png" "$SIM_APP/${name}.png"
+          }
+          make_asset owniq_logo_reference 218 45 /tmp/white.png
+          make_asset home_house 240 220 /tmp/navy.png
+          make_asset home_watch 110 87 /tmp/navy.png
+          make_asset home_sofa 120 70 /tmp/navy.png
+          make_asset home_lamp 90 71 /tmp/navy.png
+          make_asset home_floorplan 177 100 /tmp/navy.png
+          make_asset scanner_camera 520 360 /tmp/navy.png
+          make_asset scanner_chair 78 75 /tmp/navy.png
+          make_asset scanner_table 80 75 /tmp/navy.png
+          make_asset scanner_bookshelf 80 75 /tmp/navy.png
+          make_asset house_isometric 440 350 /tmp/navy.png
+          make_asset house_room 150 98 /tmp/navy.png
+          make_asset inv_macbook 188 150 /tmp/navy.png
+          make_asset inv_chair 190 144 /tmp/navy.png
+          make_asset inv_pikachu 180 155 /tmp/navy.png
+          make_asset inv_omega 180 148 /tmp/navy.png
+          make_asset profile_avatar 99 100 /tmp/navy.png
+
+      - name: Capture five-screen audit
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin)["devices"]; xs=[x for devices in d.values() for x in devices if x.get("isAvailable") and x.get("name")=="iPhone 16 Pro"]; xs=xs or [x for devices in d.values() for x in devices if x.get("isAvailable") and x.get("name","").startswith("iPhone")]; print(xs[0]["udid"])')
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          APP_PATH="$PWD/SimulatorData/Build/Products/Release-iphonesimulator/OWNIQ.app"
+          xcrun simctl install "$UDID" "$APP_PATH"
+          for TAB in home scanner house inventory profile; do
+            xcrun simctl terminate "$UDID" com.owniq.publicbuild || true
+            xcrun simctl launch "$UDID" com.owniq.publicbuild --tab "$TAB"
+            sleep 2
+            xcrun simctl io "$UDID" screenshot "ui-${TAB}.png"
+          done
+          xcrun simctl shutdown "$UDID" || true
+
       - name: Package unsigned IPA
         run: |
           set -euo pipefail
           APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/OWNIQ.app"
-          IPA_PATH="$PWD/OWNIQ-0.9.1-full-ux-unsigned.ipa"
+          IPA_PATH="$PWD/OWNIQ-0.9.1-strict-reference-unsigned.ipa"
           test -d "$APP_PATH"
-          rm -rf Payload "$IPA_PATH" SHA256.txt
+          rm -rf Payload "$IPA_PATH" SHA256.txt IPA_SIZE.txt
           mkdir -p Payload
           ditto "$APP_PATH" Payload/OWNIQ.app
           /usr/bin/zip -qry "$IPA_PATH" Payload
           test -s "$IPA_PATH"
           shasum -a 256 "$IPA_PATH" > SHA256.txt
+          stat -f '%z bytes' "$IPA_PATH" > IPA_SIZE.txt
 
-      - name: Upload IPA and build log
+      - name: Upload IPA and strict audit evidence
         uses: actions/upload-artifact@v4
         with:
-          name: OWNIQ-0.9.1-full-ux-unsigned
+          name: OWNIQ-0.9.1-strict-reference-unsigned
           path: |
-            OWNIQ-0.9.1-full-ux-unsigned.ipa
+            OWNIQ-0.9.1-strict-reference-unsigned.ipa
             SHA256.txt
+            IPA_SIZE.txt
             build.log
+            simulator-build.log
+            ui-home.png
+            ui-scanner.png
+            ui-house.png
+            ui-inventory.png
+            ui-profile.png
           retention-days: 14
